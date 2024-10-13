@@ -1,0 +1,11 @@
+{
+  "name": "se.yogurtthehor.unity.templating",
+  "version": "0.0.1",
+  "description": "A package for creating Unity projects from templates.",
+  "displayName": "Unity Templating",
+  "author": {
+    "name": "Yogurt The Horse",
+    "email": "yegor@yogurtthwhor.se",
+    "url": "https://yogurtthehor.se"
+  }
+}
