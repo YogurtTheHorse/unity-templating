@@ -114,7 +114,7 @@ pipeline {
             steps {
                 script {
                     def buildSettingsPath = "${SUPER_BUILD_DIR}/SuperUnityBuildSettings.asset"
-                    def buildNumber = env.BUILD_NUMBER - 1 // minus one because it would be increased on build
+                    def buildNumber = (env.BUILD_NUMBER as int) - 1 // minus one because it would be increased on build
 
                     def buildSettingsFileContent = readFile(buildSettingsPath)
                     def updatedContent = buildSettingsFileContent.replaceAll(/(\s*buildCounter:\s*)\d+/, "\$1${buildNumber}")
