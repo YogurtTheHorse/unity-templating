@@ -1,0 +1,211 @@
+def unityInstallPath = 'none'
+
+pipeline {
+    agent any
+    
+    parameters {
+        string(name: 'BRANCH', defaultValue: 'main', description: 'Git branch to build from')
+        
+        booleanParam(name: 'CLEAN_UNITY', defaultValue: false, description: 'Tick to removed cached files - will take an eon')
+        booleanParam(name: 'CLEAN_BUILDS', defaultValue: false, description: 'Tick to remove build files')
+        
+        booleanParam(name: 'UPLOAD_ITCH', defaultValue: true, description: 'Tick to deloy to itch')
+        booleanParam(name: 'POST_REMOVE_ARCHIVES', defaultValue: true, description: 'Tick to remove zip files after build')
+    }
+
+    options {
+        timestamps()
+        timeout(time: 45, unit: 'MINUTES')
+    }
+    
+    environment {
+        REPO_URL = 'git@github.com:faranlegt/ld56.git'
+        PROJECT_PATH = '.'
+        
+        UNITY_HUB_PATH = 'unityhub'
+        REQUIRED_MODULES = 'webgl windows linux-mono mac-mono windows-mono'
+        
+        SUPER_BUILD_DIR = 'Assets/SuperUnityBuild/Settings'
+        
+        UNITY_CREDS = credentials('personal-unity-id')
+        BUTLER_API_KEY = credentials('itch-butler-yogurt')
+
+        ITCH_PROJECT = 'yogurtthehorse/test'
+    }
+
+    stages {
+        stage('Clean Unity cache') {
+            when {
+                expression { return params.CLEAN_UNITY }
+            }
+            steps {
+                sh "rm -rf ./Library"
+                sh "rm -rf ./Temp"
+                sh "rm -rf ./Builds"
+            }
+        }
+
+        stage('Clean Builds') {
+            when {
+                expression { return params.CLEAN_BUILDS }
+            }
+            steps {
+                sh "rm -rf ./Builds"
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                git branch: "${BRANCH}", credentialsId: 'faranlegt-ssh-key', url: "${REPO_URL}"
+            }
+        }
+    
+        stage('Install Unity from project settings') {
+            steps {
+                script {
+                    wrap([$class: 'Xvfb', autoDisplayName: true]) {
+                        def unityVersion = sh(
+                            script: "grep 'm_EditorVersion' ${PROJECT_PATH}/ProjectSettings/ProjectVersion.txt | head -n 1 | cut -d ' ' -f2",
+                            returnStdout: true
+                        ).trim()
+                        
+                        def changelist = sh(
+                            script: "grep 'm_EditorVersionWithRevision' ${PROJECT_PATH}/ProjectSettings/ProjectVersion.txt | grep -oP '(?<=\\()[^)]*(?=\\))'",
+                            returnStdout: true
+                        ).trim()
+                        
+                        echo "Unity version found: ${unityVersion}"
+                        echo "Changelist found: ${changelist}"
+                        
+                        
+                        def isAlreadyInstalled = sh(
+                            script: """
+                            unityhub --headless editors --installed --no-sandbox | grep -q ${unityVersion} && echo 'yes' || echo 'no'
+                            """,
+                            returnStdout: true
+                        ).trim()
+                
+                        if (isAlreadyInstalled == 'yes') {
+                            echo "Unity is already installed"
+                        } else {
+                            sh "${UNITY_HUB_PATH} --no-sandbox --headless install --version ${unityVersion} --changeset ${changelist} --wait"
+                        }
+                        
+                        unityInstallPath = sh(
+                            script: """
+                            unityhub --headless editors --installed --no-sandbox | grep ${unityVersion} | grep -oP '(?<=installed at ).*'
+                            """,
+                            returnStdout: true
+                        ).trim()
+                        
+                        echo "Unity installed at: ${unityInstallPath}"
+
+                        echo "Install required modules"
+
+                        sh """
+                        ${UNITY_HUB_PATH} --no-sandbox --headless im --version ${unityVersion} --cm --module ${REQUIRED_MODULES} || true
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Update Build Counter') {
+            steps {
+                script {
+                    def buildSettingsPath = "${SUPER_BUILD_DIR}/SuperUnityBuildSettings.asset"
+                    def buildNumber = env.BUILD_NUMBER - 1 // minus one because it would be increased on build
+
+                    def buildSettingsFileContent = readFile(buildSettingsPath)
+                    def updatedContent = buildSettingsFileContent.replaceAll(/(\s*buildCounter:\s*)\d+/, "\$1${buildNumber}")
+                    writeFile(file: buildSettingsPath, text: updatedContent)
+                }
+            }
+        }
+        
+        stage('Build Unity Project') {
+            steps {
+                script {
+                    sh """
+                    ${unityInstallPath} -batchmode -nographics -quit -projectPath ${PROJECT_PATH} -username $UNITY_CREDS_USR -password $UNITY_CREDS_PSW -executeMethod SuperUnityBuild.BuildTool.BuildCLI.PerformBuild -logFile - 2>&1 | tee build.log
+                    """
+                    
+                    logParser failBuildOnError: true, projectRulePath: '', parsingRulesPath: '/var/lib/jenkins/configs/unity-parsing.txt', showGraphs: true, unstableOnWarning: true, useProjectRule: false
+                }
+            }
+        }
+
+        stage('Collect build files') {
+            steps {
+                script {
+                    def buildLog = readFile 'build.log'
+                    def logLines = buildLog.split("\n")
+                    def buildPaths = []
+
+                    for (line in logLines) {
+                        if (line.contains('Build path:')) {
+                            def buildPath = line.substring(line.indexOf('Build path:') + 'Build path:'.length()).trim()
+                            buildPaths.add(buildPath)
+                        }
+                    }
+
+                    buildPaths.each { buildPath ->
+                        echo "Archiving build folder: ${buildPath}"
+
+                        
+                        dir(buildPath) {
+                            // do not use zip of jenkins as it would remove MacOS executable attributes (mb not only MacOS have not checked)
+                            sh """
+                            find . -type d -name "*DoNotShip*" -prune -o -type f -print | zip -@ ../\$(basename "${buildPath}").zip
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Archive zip files') {
+            steps {
+                archiveArtifacts artifacts: 'Builds/**/*.zip', allowEmptyArchive: false
+            }
+        }
+
+        stage('List and Push ZIP files') {
+            when {
+                expression { return params.UPLOAD_ITCH }
+            }
+
+            steps {
+                script {
+                    def zipFiles = sh(script: 'find Builds -name "*.zip"', returnStdout: true).trim().split("\n")
+                    
+                    for (zipFile in zipFiles) {
+                        def zipName = zipFile.tokenize('/').last().replace('.zip', '')
+
+                        echo "Uploading ${zipName} to itch"
+                        
+                        sh "butler push ${zipFile} ${ITCH_PROJECT}:${zipName} --userversion-file Builds/build_number.txt"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                if (env.POST_REMOVE_ARCHIVES == 'true') {
+                    def zipFiles = sh(script: 'find Builds -name "*.zip"', returnStdout: true).trim().split("\n")
+                        
+                    if (zipFiles.length > 0 && zipFiles[0] != "") {
+                        for (zipFile in zipFiles) {
+                            sh "rm ${zipFile}"
+                        }
+                    } else {
+                        echo "No zip files found to remove."
+                    }
+                }
+            }
+        }
+    }
+}
