@@ -1,6 +1,7 @@
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using UnityEditor;
 using UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
 using UnityEngine;
@@ -35,28 +36,49 @@ namespace YogurtTheHorse.Unity.Templating.Editor
         }
 
         // todo: make it a coroutine
-        public static IProgress CopyFiles(UnityTemplate.FileToCopy[] filesToCopies, bool overwrite) =>
-            new LambdaProgress("Copy files", () =>
-            {
-                foreach (var file in filesToCopies)
+        public static IProgress CopyAssets(UnityTemplate.AssetsToCopy[] assetsToCopies, string relativeDirectory) =>
+            new LambdaProgress(
+                "Copy files", () =>
                 {
-                    var source = Path.Combine(file.source);
-                    var destination = Path.Combine(Application.dataPath, file.destination);
+                    var rootDirectory = Directory.GetParent(Application.dataPath)!.FullName;
 
-                    if (!File.Exists(source))
+                    foreach (var assetToCopy in assetsToCopies)
                     {
-                        Debug.LogWarning($"File {source} not found");
-                        continue;
+                        // todo: add glob support somehow...
+                        switch (assetToCopy.type)
+                        {
+                            case UnityTemplate.AssetsToCopy.AssetType.UnityAsset:
+                                AssetDatabase.CopyAsset(assetToCopy.source, assetToCopy.destination);
+                                break;
+
+                            case UnityTemplate.AssetsToCopy.AssetType.RelativeFile:
+                                var absoluteDestination = Path.Combine(rootDirectory, assetToCopy.destination);
+                                var absoluteSource = Path.Combine(relativeDirectory, assetToCopy.source);
+                                var isDirectory = assetToCopy.destination.EndsWith(Path.DirectorySeparatorChar)
+                                                  || assetToCopy.destination.EndsWith(Path.AltDirectorySeparatorChar);
+                                var fileDestination = isDirectory
+                                    ? Path.Join(absoluteDestination, Path.GetFileName(assetToCopy.source))
+                                    : absoluteDestination;
+
+                                var parentDirectory = Path.GetDirectoryName(fileDestination);
+                                if (!Directory.Exists(parentDirectory))
+                                {
+                                    Directory.CreateDirectory(parentDirectory!);
+                                }
+
+                                Debug.Log($"Copying {absoluteSource} to {fileDestination}");
+                                File.Copy(absoluteSource, fileDestination, true);
+                                break;
+                        }
                     }
 
-                    File.Copy(source, destination, overwrite);
+                    return 1;
                 }
-
-                return 1;
-            });
+            );
 
         public static IProgress SetupScopedRegistries(UnityTemplate.ScopedRegistry[] scopedRegistries) =>
-            new ParallelProgress("Install scopes",
+            new ParallelProgress(
+                "Install scopes",
                 scopedRegistries
                     .Select(r =>
                         {

@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace YogurtTheHorse.Unity.Templating
 {
@@ -15,8 +16,15 @@ namespace YogurtTheHorse.Unity.Templating
         }
 
         [Serializable]
-        public struct FileToCopy
+        public struct AssetsToCopy
         {
+            public enum AssetType
+            {
+                UnityAsset = 0,
+                RelativeFile = 1,
+            }
+
+            public AssetType type;
             public string source;
             public string destination;
         }
@@ -24,8 +32,7 @@ namespace YogurtTheHorse.Unity.Templating
         [Header("Files")] public string[] folders = Array.Empty<string>();
         public bool createGitKeepFiles = true;
 
-        [Space] public FileToCopy[] files = Array.Empty<FileToCopy>();
-        public bool overwriteFiles = true;
+        [Space] public AssetsToCopy[] assetsToCopy = Array.Empty<AssetsToCopy>();
 
         [Header("Packages")] public ScopedRegistry[] scopedRegistries = Array.Empty<ScopedRegistry>();
         public string[] requiredPackages = Array.Empty<string>();

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEditor;
 using UnityEngine;
 using YogurtTheHorse.Unity.Templating.Editor.Progression;
@@ -72,7 +73,10 @@ namespace YogurtTheHorse.Unity.Templating.Editor
 
             if (_copyFilesSelected)
             {
-                installList.Add(() => TemplateInstaller.CopyFiles(_template.files, _template.overwriteFiles));
+                var templatePath = Path.GetFullPath(AssetDatabase.GetAssetPath(_template));
+                var templateDirectory = Path.GetDirectoryName(templatePath);
+                
+                installList.Add(() => TemplateInstaller.CopyAssets(_template.assetsToCopy, templateDirectory));
             }
 
             if (_installRegistriesSelected)

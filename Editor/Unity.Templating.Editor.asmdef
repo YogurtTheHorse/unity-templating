@@ -1,5 +1,5 @@
 {
-    "name": "UnityTemplating",
+    "name": "UnityTemplating.Editor",
     "rootNamespace": "YogurtTheHorse.Unity.Templating.Editor",
     "references": [
         "GUID:e2785cdf0d2dd453c923c9dadb50f83d"
