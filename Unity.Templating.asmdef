@@ -2,9 +2,7 @@
     "name": "UnityTemplating",
     "rootNamespace": "YogurtTheHorse.Unity.Templating",
     "references": [],
-    "includePlatforms": [
-        "Editor"
-    ],
+    "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
