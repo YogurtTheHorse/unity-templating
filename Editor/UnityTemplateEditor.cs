@@ -17,9 +17,9 @@ namespace YogurtTheHorse.Unity.Templating.Editor
         private bool _installRegistriesSelected = true;
         private bool _installPackagesSelected = true;
 
-        private float _progress = 0;
+        private float _progress;
         private string _progressState = "Idle";
-        private bool _isInstalling = false;
+        private bool _isInstalling;
 
         private void OnEnable()
         {
@@ -29,6 +29,9 @@ namespace YogurtTheHorse.Unity.Templating.Editor
         public override void OnInspectorGUI()
         {
             DrawDefaultInspector();
+
+            var oldGui = GUI.enabled;
+            GUI.enabled = true;
 
             GUILayout.Space(10);
             GUILayout.Label("Installation Options", EditorStyles.boldLabel);
@@ -56,6 +59,8 @@ namespace YogurtTheHorse.Unity.Templating.Editor
                     InstallTemplateStepByStep();
                 }
             }
+
+            GUI.enabled = oldGui;
         }
 
         private void InstallTemplateStepByStep()
@@ -75,7 +80,7 @@ namespace YogurtTheHorse.Unity.Templating.Editor
             {
                 var templatePath = Path.GetFullPath(AssetDatabase.GetAssetPath(_template));
                 var templateDirectory = Path.GetDirectoryName(templatePath);
-                
+
                 installList.Add(() => TemplateInstaller.CopyAssets(_template.assetsToCopy, templateDirectory));
             }
 
